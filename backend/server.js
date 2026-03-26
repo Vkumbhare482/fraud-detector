@@ -6,6 +6,7 @@ const cors = require("cors");
 const app = express();
 const server = http.createServer(app);
 
+// ✅ socket setup
 const io = new Server(server, {
   cors: { origin: "*" }
 });
@@ -13,10 +14,15 @@ const io = new Server(server, {
 app.use(cors());
 app.use(express.json());
 
+// ✅ ROOT ROUTE (Render check)
+app.get("/", (req, res) => {
+  res.send("🚀 Fraud Detection Backend is Running!");
+});
+
+// ✅ TRANSACTION API
 app.post("/transaction", (req, res) => {
   const { from, to, amount } = req.body;
 
-  // 🔥 SIMPLE TEST FRAUD (no confusion)
   const fraud = amount > 20000;
 
   const tx = { from, to, amount, fraud };
@@ -28,6 +34,9 @@ app.post("/transaction", (req, res) => {
   res.json({ success: true });
 });
 
-server.listen(3000, () => {
-  console.log("✅ Backend running on http://localhost:3000");
+// ✅ IMPORTANT FIX (Render)
+const PORT = process.env.PORT || 3000;
+
+server.listen(PORT, () => {
+  console.log(`🚀 Server running on port ${PORT}`);
 });
