@@ -2,7 +2,13 @@ import React, { useEffect, useState } from "react";
 import { io } from "socket.io-client";
 import ForceGraph2D from "react-force-graph-2d";
 
-const socket = io("http://localhost:3000");
+// ✅ Backend URL
+const BACKEND_URL = "https://fraud-detector-2-7n40.onrender.com";
+
+// ✅ Socket connection
+const socket = io(BACKEND_URL, {
+  transports: ["websocket"]
+});
 
 function App() {
   const [graphData, setGraphData] = useState({
@@ -21,10 +27,14 @@ function App() {
     safe: 0
   });
 
-  // 🔥 SOCKET LISTENER (ONLY ONCE)
+  // 🔥 Socket listener
   useEffect(() => {
     socket.on("connect", () => {
       console.log("✅ Connected to backend");
+    });
+
+    socket.on("connect_error", (err) => {
+      console.error("❌ Socket error:", err.message);
     });
 
     socket.on("newTransaction", (data) => {
@@ -42,11 +52,11 @@ function App() {
         const nodes = [...prev.nodes];
         const links = [...prev.links];
 
-        if (!nodes.some(n => n.id === data.from)) {
+        if (!nodes.find((n) => n.id === data.from)) {
           nodes.push({ id: data.from });
         }
 
-        if (!nodes.some(n => n.id === data.to)) {
+        if (!nodes.find((n) => n.id === data.to)) {
           nodes.push({ id: data.to });
         }
 
@@ -62,34 +72,47 @@ function App() {
       setStatus(data.fraud ? "🚨 Fraud Detected" : "✅ Safe");
     });
 
-    return () => socket.off("newTransaction"); // 🔥 important fix
+    return () => {
+      socket.off("connect");
+      socket.off("connect_error");
+      socket.off("newTransaction");
+    };
   }, []);
 
-  // 🚀 manual transaction
+  // 🚀 Send transaction
   const handleSubmit = async () => {
-    await fetch("http://localhost:3000/transaction", {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json"
-      },
-      body: JSON.stringify({
-        from,
-        to,
-        amount: Number(amount)
-      })
-    });
+    try {
+      const res = await fetch(`${BACKEND_URL}/transaction`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json"
+        },
+        body: JSON.stringify({
+          from,
+          to,
+          amount: Number(amount)
+        })
+      });
+
+      const data = await res.json();
+      console.log("✅ API Response:", data);
+    } catch (err) {
+      console.error("❌ API Error:", err);
+    }
   };
 
   return (
     <div style={{ display: "flex", height: "100vh" }}>
-
+      
       {/* LEFT PANEL */}
-      <div style={{
-        width: "300px",   // 🔥 fixed width
-        padding: "20px",
-        background: "#0f172a",
-        color: "white"
-      }}>
+      <div
+        style={{
+          width: "300px",
+          padding: "20px",
+          background: "#0f172a",
+          color: "white"
+        }}
+      >
         <h2>💰 Fraud Detection</h2>
 
         <input
@@ -118,9 +141,7 @@ function App() {
         </button>
 
         <h3>Status:</h3>
-        <p style={{
-          color: status.includes("Fraud") ? "red" : "lightgreen"
-        }}>
+        <p style={{ color: status.includes("Fraud") ? "red" : "lightgreen" }}>
           {status}
         </p>
 
@@ -136,7 +157,6 @@ function App() {
           graphData={graphData}
           backgroundColor="#020617"
           linkColor={(link) => link.color || "gray"}
-
           nodeCanvasObject={(node, ctx, scale) => {
             ctx.beginPath();
             ctx.arc(node.x, node.y, 6, 0, 2 * Math.PI);
@@ -154,6 +174,7 @@ function App() {
   );
 }
 
+// styles
 const inputStyle = {
   width: "100%",
   marginBottom: "10px",

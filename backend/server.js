@@ -6,15 +6,27 @@ const cors = require("cors");
 const app = express();
 const server = http.createServer(app);
 
-// ✅ socket setup
+// ✅ socket setup (FIXED)
 const io = new Server(server, {
-  cors: { origin: "*" }
+  cors: {
+    origin: "*",
+    methods: ["GET", "POST"]
+  }
 });
 
 app.use(cors());
 app.use(express.json());
 
-// ✅ ROOT ROUTE (Render check)
+// ✅ Debug socket connection
+io.on("connection", (socket) => {
+  console.log("✅ User connected:", socket.id);
+
+  socket.on("disconnect", () => {
+    console.log("❌ User disconnected:", socket.id);
+  });
+});
+
+// ✅ ROOT ROUTE
 app.get("/", (req, res) => {
   res.send("🚀 Fraud Detection Backend is Running!");
 });
@@ -34,7 +46,7 @@ app.post("/transaction", (req, res) => {
   res.json({ success: true });
 });
 
-// ✅ IMPORTANT FIX (Render)
+// ✅ PORT FIX
 const PORT = process.env.PORT || 3000;
 
 server.listen(PORT, () => {
