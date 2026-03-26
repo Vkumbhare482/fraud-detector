@@ -1,40 +1,25 @@
-const neo4j = require("neo4j-driver");
-require("dotenv").config();
+const axios = require("axios");
 
-const driver = neo4j.driver(
-  process.env.NEO4J_URI,
-  neo4j.auth.basic(
-    process.env.NEO4J_USERNAME,
-    process.env.NEO4J_PASSWORD
-  )
-);
+const AI_URL = "http://localhost:5000/predict/transaction";
 
-const session = driver.session();
+async function analyzeTransaction(tx) {
+  try {
+    const aiRes = await axios.post(AI_URL, {
+      features: [tx.amount, 1, 0, 1]
+    });
 
-async function addTransaction(from, to, amount) {
-  await session.run(`
-    MERGE (a:Account {name: $from})
-    MERGE (b:Account {name: $to})
-    CREATE (a)-[:TRANSFER {amount: $amount}]->(b)
-  `, { from, to, amount });
+    const isFraud =
+      aiRes.data.fraud === 1 ||
+      tx.amount > 20000 ||
+      tx.from === tx.to ||
+      (tx.amount > 5000 && tx.amount < 10000);
 
-  console.log("✅ Transaction added");
+    return isFraud;
 
-  await detectFraud();
-}
-
-async function detectFraud() {
-  const result = await session.run(`
-    MATCH path = (a:Account)-[:TRANSFER*3..5]->(b:Account)
-    RETURN path
-  `);
-
-  if (result.records.length > 0) {
-    console.log("🚨 Fraud detected!");
-  } else {
-    console.log("✅ No fraud");
+  } catch (err) {
+    console.error("AI error:", err.message);
+    return false;
   }
 }
 
-// test call
-addTransaction("A", "B", 500);
+module.exports = { analyzeTransaction };

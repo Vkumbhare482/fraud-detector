@@ -1,76 +1,83 @@
-import React, { useState, useEffect } from "react";
-import axios from "axios";
-import ForceGraph2D from "react-force-graph-2d";
-import { RadialBarChart, RadialBar } from "recharts";
+import React, { useEffect, useState } from "react";
 import { io } from "socket.io-client";
+import ForceGraph2D from "react-force-graph-2d";
 
-// 🔥 IMPORTANT: Replace with your Render backend URL
-const API_URL = "https://fraud-detector-1-pd4y.onrender.com";
-
-const socket = io(API_URL);
+const socket = io("http://localhost:3000");
 
 function App() {
-  const [from, setFrom] = useState("");
-  const [to, setTo] = useState("");
-  const [amount, setAmount] = useState("");
-  const [status, setStatus] = useState("");
-  const [riskScore, setRiskScore] = useState(0);
-  const [users, setUsers] = useState([]);
-
   const [graphData, setGraphData] = useState({
     nodes: [],
     links: []
   });
 
-  // 🔴 Live transaction updates
+  const [from, setFrom] = useState("");
+  const [to, setTo] = useState("");
+  const [amount, setAmount] = useState("");
+  const [status, setStatus] = useState("");
+
+  const [stats, setStats] = useState({
+    total: 0,
+    fraud: 0,
+    safe: 0
+  });
+
+  // 🔥 SOCKET LISTENER (ONLY ONCE)
   useEffect(() => {
+    socket.on("connect", () => {
+      console.log("✅ Connected to backend");
+    });
+
     socket.on("newTransaction", (data) => {
+      console.log("🔥 RECEIVED:", data);
+
+      // stats update
+      setStats((prev) => ({
+        total: prev.total + 1,
+        fraud: data.fraud ? prev.fraud + 1 : prev.fraud,
+        safe: !data.fraud ? prev.safe + 1 : prev.safe
+      }));
+
+      // graph update
       setGraphData((prev) => {
         const nodes = [...prev.nodes];
         const links = [...prev.links];
 
-        // Avoid duplicate nodes
-        if (!nodes.find(n => n.id === data.from)) {
+        if (!nodes.some(n => n.id === data.from)) {
           nodes.push({ id: data.from });
         }
-        if (!nodes.find(n => n.id === data.to)) {
+
+        if (!nodes.some(n => n.id === data.to)) {
           nodes.push({ id: data.to });
         }
 
-        links.push({ source: data.from, target: data.to });
+        links.push({
+          source: data.from,
+          target: data.to,
+          color: data.fraud ? "red" : "green"
+        });
 
         return { nodes, links };
       });
+
+      setStatus(data.fraud ? "🚨 Fraud Detected" : "✅ Safe");
     });
 
-    return () => socket.disconnect();
+    return () => socket.off("newTransaction"); // 🔥 important fix
   }, []);
 
-  // 👥 Dashboard users
-  useEffect(() => {
-    axios.get(`${API_URL}/dashboard`)
-      .then(res => setUsers(res.data))
-      .catch(err => console.error(err));
-  }, []);
-
-  // 🚀 Send transaction
+  // 🚀 manual transaction
   const handleSubmit = async () => {
-    try {
-      setStatus("Processing...");
-
-      const res = await axios.post(`${API_URL}/transaction`, {
+    await fetch("http://localhost:3000/transaction", {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json"
+      },
+      body: JSON.stringify({
         from,
         to,
         amount: Number(amount)
-      });
-
-      setStatus(res.data.status);
-      setRiskScore(res.data.riskScore);
-
-    } catch (err) {
-      console.error(err);
-      setStatus("Error ❌");
-    }
+      })
+    });
   };
 
   return (
@@ -78,7 +85,7 @@ function App() {
 
       {/* LEFT PANEL */}
       <div style={{
-        width: "30%",
+        width: "300px",   // 🔥 fixed width
         padding: "20px",
         background: "#0f172a",
         color: "white"
@@ -110,38 +117,17 @@ function App() {
           🚀 Send Transaction
         </button>
 
-        {/* STATUS */}
         <h3>Status:</h3>
         <p style={{
-          color: riskScore > 70 ? "red" : "lightgreen",
-          fontWeight: "bold"
+          color: status.includes("Fraud") ? "red" : "lightgreen"
         }}>
           {status}
         </p>
 
-        {/* RISK */}
-        <h3>Risk Score:</h3>
-        <RadialBarChart
-          width={200}
-          height={200}
-          cx="50%"
-          cy="50%"
-          innerRadius="60%"
-          outerRadius="100%"
-          data={[{ value: riskScore }]}
-        >
-          <RadialBar dataKey="value" />
-        </RadialBarChart>
-
-        <p>{riskScore}/100</p>
-
-        {/* USERS */}
-        <h3>👥 Users</h3>
-        {users.map((u, i) => (
-          <div key={i}>
-            👤 {u.user} - {u.totalTx}
-          </div>
-        ))}
+        <h3>📊 Stats</h3>
+        <p>Total: {stats.total}</p>
+        <p>Fraud: {stats.fraud}</p>
+        <p>Safe: {stats.safe}</p>
       </div>
 
       {/* GRAPH */}
@@ -149,21 +135,18 @@ function App() {
         <ForceGraph2D
           graphData={graphData}
           backgroundColor="#020617"
-          nodeCanvasObject={(node, ctx, globalScale) => {
-            const label = node.id;
-            const fontSize = 12 / globalScale;
-            ctx.font = `${fontSize}px Sans-Serif`;
+          linkColor={(link) => link.color || "gray"}
 
-            ctx.fillStyle = riskScore > 70 ? "red" : "#22c55e";
+          nodeCanvasObject={(node, ctx, scale) => {
             ctx.beginPath();
             ctx.arc(node.x, node.y, 6, 0, 2 * Math.PI);
+            ctx.fillStyle = "#22c55e";
             ctx.fill();
 
             ctx.fillStyle = "white";
-            ctx.fillText(label, node.x + 8, node.y + 8);
+            ctx.font = `${12 / scale}px Sans-Serif`;
+            ctx.fillText(node.id, node.x + 8, node.y + 8);
           }}
-          linkDirectionalArrowLength={6}
-          linkDirectionalArrowRelPos={1}
         />
       </div>
 
@@ -171,7 +154,6 @@ function App() {
   );
 }
 
-// 🎨 Styles
 const inputStyle = {
   width: "100%",
   marginBottom: "10px",
